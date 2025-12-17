@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Relógio Porto Alegre (PWA)</title>
+  <link rel="manifest" href="/manifest.json" />
+  <style>
+    :root { --bg:#0b1220; --fg:#e6eef8; --accent:#3ddc84; }
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+    body{display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#061024,#091427);color:var(--fg);}
+    .card{background:rgba(255,255,255,0.03);padding:36px;border-radius:16px;box-shadow:0 6px 30px rgba(2,6,23,0.6);text-align:center;}
+    .time{font-size:5rem;letter-spacing:0.02em;margin:0;}
+    .tz{font-size:1rem;color:rgba(230,238,248,0.7);margin-top:8px;}
+    .status{margin-top:10px;font-size:0.9rem;color:rgba(230,238,248,0.6);}
+    .small{font-size:0.85rem;color:rgba(230,238,248,0.55);margin-top:12px;}
+  </style>
+</head>
+<body>
+  <div class="card" role="main">
+    <div id="time" class="time">--:--:--</div>
+    <div class="tz">America/Sao_Paulo (Porto Alegre)</div>
+    <div id="status" class="status">Sincronizando...</div>
+    <div id="note" class="small">Preciso ao carregar — ressincroniza automaticamente.</div>
+    <button id="resync" style="margin-top:14px;padding:8px 12px;border-radius:8px;border:none;background:transparent;color:var(--accent);cursor:pointer;">
+      Ressincronizar agora
+    </button>
+  </div>
+
+<script>
+/*
+ Estratégia:
+ 1) Busca timestamp oficial (ISO) em worldtimeapi.org para America/Sao_Paulo.
+ 2) Salva epoch_msServidor e registro de performance.now() -> startPerf.
+ 3) getAccurateNow() = new Date(serverEpoch + (performance.now() - startPerf))
+ 4) Atualiza a cada frame com requestAnimationFrame para segundos precisos.
+ 5) Ressincroniza periodicamente (ex.: 5 min).
+*/
+
+const API = "https://worldtimeapi.org/api/timezone/America/Sao_Paulo";
+const timeEl = document.getElementById("time");
+const statusEl = document.getElementById("status");
+const resyncBtn = document.getElementById("resync");
+
+let serverEpoch = null; // ms
+let startPerf = null;   // performance.now() timestamp at sync
+let syncAt = null;      // Date string of last sync
+let resyncIntervalMs = 5 * 60 * 1000; // 5 minutos
+
+async function syncTime() {
+  statusEl.textContent = "Sincronizando...";
+  try {
+    const resp = await fetch(API, { cache: "no-store" });
+    if (!resp.ok) throw new Error("Erro na API: " + resp.status);
+    const j = await resp.json();
+    // j.datetime contém ISO como "2025-12-16T16:51:06.102183-03:00"
+    serverEpoch = Date.parse(j.datetime); // ms
+    startPerf = performance.now();
+    syncAt = new Date(serverEpoch).toLocaleString();
+    statusEl.textContent = `Sincronizado em ${syncAt} (fonte: worldtimeapi.org)`;
+  } catch (err) {
+    console.error("syncTime erro:", err);
+    statusEl.textContent = "Falha ao sincronizar — usando horário local (menos preciso)";
+    // fallback: use local system time as serverEpoch
+    serverEpoch = Date.now();
+    startPerf = performance.now();
+  }
+}
+
+// retorna Date preciso baseado no epoch inicial + clock monotônico
+function getAccurateNow() {
+  if (serverEpoch === null || startPerf === null) return new Date();
+  const delta = performance.now() - startPerf;
+  return new Date(serverEpoch + Math.round(delta));
+}
+
+function pad(n){ return n.toString().padStart(2,'0'); }
+
+function updateLoop(){
+  const now = getAccurateNow();
+  const hh = pad(now.getHours());
+  const mm = pad(now.getMinutes());
+  const ss = pad(now.getSeconds());
+  timeEl.textContent = `${hh}:${mm}:${ss}`;
+  requestAnimationFrame(updateLoop);
+}
+
+// periodic resync (corrige drift)
+let resyncTimer = null;
+function startPeriodicResync(){
+  if(resyncTimer) clearInterval(resyncTimer);
+  resyncTimer = setInterval(()=>{ syncTime(); }, resyncIntervalMs);
+}
+
+resyncBtn.addEventListener('click', ()=>{ syncTime(); });
+
+(async function init(){
+  await syncTime();
+  updateLoop();
+  startPeriodicResync();
+  // tentar registrar service worker (PWA/offline)
+  if ('serviceWorker' in navigator) {
+    try {
+      await navigator.serviceWorker.register('/sw.js');
+      console.log('SW registrado');
+    } catch(e){ console.warn('SW falhou', e); }
+  }
+})();
+</script>
+</body>
+</html>
