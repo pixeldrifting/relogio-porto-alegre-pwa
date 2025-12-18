@@ -28,12 +28,8 @@
     .status{margin-top:10px;font-size:0.9rem;color:rgba(230,238,248,0.6);}
     .small{font-size:0.85rem;color:rgba(230,238,248,0.55);margin-top:12px;}
 
-    .intervalo{
-      margin-top:24px;text-align:left;
-    }
-    .row{
-      display:flex;align-items:center;gap:12px;margin-top:10px;
-    }
+    .intervalo{margin-top:24px;text-align:left;}
+    .row{display:flex;align-items:center;gap:12px;margin-top:10px;}
     .label{width:70px;font-size:0.9rem;}
     .value{
       flex:1;border-bottom:1px solid rgba(255,255,255,0.3);
@@ -83,6 +79,7 @@
 
 <script>
 const API = "https://worldtimeapi.org/api/timezone/America/Sao_Paulo";
+const STORAGE_KEY = "intervalo15min";
 
 const timeEl = document.getElementById("time");
 const statusEl = document.getElementById("status");
@@ -119,7 +116,6 @@ function getNow() {
 }
 
 function pad(n){ return n.toString().padStart(2,"0"); }
-
 function fmt(d){
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
@@ -133,6 +129,7 @@ function loop(){
     terminoEl.textContent = "";
     intervaloAtivo = false;
     fimIntervaloMs = null;
+    localStorage.removeItem(STORAGE_KEY);
   }
 
   requestAnimationFrame(loop);
@@ -147,12 +144,33 @@ startBtn.addEventListener("click", ()=>{
 
   fimIntervaloMs = fim.getTime();
   intervaloAtivo = true;
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    inicio: inicio.getTime(),
+    fim: fimIntervaloMs
+  }));
 });
 
 resyncBtn.addEventListener("click", syncTime);
 
 (async ()=>{
   await syncTime();
+
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if(saved){
+    const data = JSON.parse(saved);
+    const now = getNow().getTime();
+
+    if(now < data.fim){
+      inicioEl.textContent = fmt(new Date(data.inicio));
+      terminoEl.textContent = fmt(new Date(data.fim));
+      fimIntervaloMs = data.fim;
+      intervaloAtivo = true;
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }
+
   loop();
 
   if("serviceWorker" in navigator){
