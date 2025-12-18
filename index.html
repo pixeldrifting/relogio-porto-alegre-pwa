@@ -84,17 +84,23 @@ const STORAGE_KEY = "intervalo15min";
 const timeEl = document.getElementById("time");
 const statusEl = document.getElementById("status");
 const resyncBtn = document.getElementById("resync");
-
 const inicioEl = document.getElementById("inicio");
 const terminoEl = document.getElementById("termino");
 const startBtn = document.getElementById("startInterval");
 
-let serverEpoch = null;
-let startPerf = null;
+let serverEpoch = Date.now();
+let startPerf = performance.now();
 
 let intervaloAtivo = false;
 let fimIntervaloMs = null;
 
+/* ========= UTIL ========= */
+function pad(n){ return n.toString().padStart(2,"0"); }
+function fmt(d){
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/* ========= SINCRONIZAÇÃO ========= */
 async function syncTime() {
   statusEl.textContent = "Sincronizando...";
   try {
@@ -115,11 +121,7 @@ function getNow() {
   return new Date(serverEpoch + (performance.now() - startPerf));
 }
 
-function pad(n){ return n.toString().padStart(2,"0"); }
-function fmt(d){
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-
+/* ========= LOOP ========= */
 function loop(){
   const now = getNow();
   timeEl.textContent = fmt(now);
@@ -131,10 +133,10 @@ function loop(){
     fimIntervaloMs = null;
     localStorage.removeItem(STORAGE_KEY);
   }
-
   requestAnimationFrame(loop);
 }
 
+/* ========= INTERVALO ========= */
 startBtn.addEventListener("click", ()=>{
   const inicio = getNow();
   const fim = new Date(inicio.getTime() + 15 * 60 * 1000);
@@ -153,13 +155,13 @@ startBtn.addEventListener("click", ()=>{
 
 resyncBtn.addEventListener("click", syncTime);
 
+/* ========= INIT ========= */
 (async ()=>{
-  await syncTime();
-
+  // 1️⃣ Restaurar intervalo ANTES de sincronizar
   const saved = localStorage.getItem(STORAGE_KEY);
   if(saved){
     const data = JSON.parse(saved);
-    const now = getNow().getTime();
+    const now = Date.now();
 
     if(now < data.fim){
       inicioEl.textContent = fmt(new Date(data.inicio));
@@ -171,8 +173,13 @@ resyncBtn.addEventListener("click", syncTime);
     }
   }
 
+  // 2️⃣ Sincronizar relógio oficial
+  await syncTime();
+
+  // 3️⃣ Iniciar loop
   loop();
 
+  // 4️⃣ Service Worker
   if("serviceWorker" in navigator){
     try{ await navigator.serviceWorker.register("/sw.js"); }
     catch(e){ console.warn("SW erro", e); }
